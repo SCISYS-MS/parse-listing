@@ -25,6 +25,8 @@
  *    T   the 1000 bit is turned on, and execution is off (undefined bit-
  *        state)
  */
+ 
+ var commandType = "";
 
 var RE_UnixEntry = new RegExp(
   "([bcdlfmpSs-])"
@@ -49,12 +51,24 @@ var RE_UnixEntry = new RegExp(
 // 04-27-00  09:09PM       <DIR>          licensed
 // 07-18-00  10:16AM       <DIR>          pub
 // 04-14-00  03:47PM                  589 readme.htm
-var RE_DOSEntry = new RegExp(
+/*var RE_DOSEntry_DIR = new RegExp(
   "(\\S+)\\s+(\\S+)\\s+" +
   "(<DIR>)?\\s*" +
-  "([0-9]+)?\\s{1,}" +
+  "([0-9.]+)?\\s{1,}" +
   "(\\S.*)"
+);*/
+
+const RE_DOSEntry_DIR =  new RegExp("(\\S+)\\s+(\\S+)\\s+(\\?|(<DIR>)|([0-9.]+))\\s+(\\S.*)");
+
+var RE_DOSEntry_WHERE = new RegExp(
+"([?]|\\d+)\\s+"+
+"([?]|\\S+)\\s+([?]|\\S+)\\s+"+
+"(\\S.*)"
 );
+
+
+
+
 
 
 // Not used for now
@@ -88,6 +102,7 @@ exports.access = {
 function splitEntries(entries) {
   if (typeof entries === "string") {
     entries = entries.split(/\r?\n/);
+
   }
   return entries;
 }
@@ -102,6 +117,7 @@ exports.parseFtpEntries = function parseFtpEntries(listing, callback) {
   var parsed = [];
   var entries = splitEntries(listing);
   entries.forEach(function(entry, i) {
+	  console.log("ENTRYYYY:" + entry)
     // Some servers include an official code-multiline sign at the beginning
     // of every string. We must strip it if that's the case.
     if (RE_MULTI.test(entry)) {
@@ -150,7 +166,8 @@ exports.parseFtpEntries = function parseFtpEntries(listing, callback) {
  * @param entries {Array.<string>|string} FTP file entry line.
  * @param callback {Function} Callback function with error or result.
  */
-exports.parseEntries = function(entries, callback) {
+exports.parseEntries = function(entries, cmdType, callback) {
+ commandType = cmdType;
   callback(null, splitEntries(entries)
     .map(parseEntry)
     .filter(function(entry) { return !!entry; }));
@@ -164,12 +181,15 @@ exports.parseEntries = function(entries, callback) {
  * @returns {Object|null} Parsed object with the file entry properties
  */
 var parseEntry = exports.parseEntry = function(entry) {
+entry = entry.trim();
   var c = entry.charAt(0);
 
   if ('bcdlps-'.indexOf(c) > -1) {
+
     return parsers.unix(entry);
   }
   else if ('0123456789'.indexOf(c) > -1) {
+	
     return parsers.msdos(entry);
   }
 
@@ -266,41 +286,101 @@ var parsers = {
   },
 
   msdos: function(entry) {
-    var group = entry.match(RE_DOSEntry);
-    var type;
+		 console.log("COMMAND TYPE:" + commandType );
 
-    if (!group) {
-      return null;
-    }
+	 if (commandType=="WHERE") {
+	
 
-    var replacer = function replacer(str, hour, min, ampm, offset, s) {
-      return hour + ":" + min + " " + ampm;
-    };
+			var group = entry.match(RE_DOSEntry_WHERE);
+		
+			var type;
 
-    var time = group[2].replace(/(\d{2}):(\d{2})([AP]M)/, replacer);
-    var date = new Date(group[1] + " " + time).getTime();
-    var dirString = group[3];
-    var size = group[4];
-    var name = group[5];
+	//		if (!group) {
+	//		  return null;
+	//		}
 
-    if (null == name || name === "." || name === "..") {
-      return null;
-    }
+	//		var replacer = function replacer(str, hour, min, sec, ampm, offset, s) {
+				
+	//		  return hour + ":" + min + " " + ampm;
+	//		};
 
-    if (dirString === "<DIR>") {
-      type = exports.nodeTypes.DIRECTORY_TYPE;
-      size = 0;
-    }
-    else {
-      type = exports.nodeTypes.FILE_TYPE;
-    }
+	//		var time = group[3].replace(/(\d{2}):(\d{2})([AP]M)/, replacer);
+	//		var date = new Date(group[2] + " " + time).getTime();
+			
+			
+			var size = group[1];
+		
+			var name = group[4];
+		
+			var folder = name.substring(0, name.lastIndexOf('\\'));
+			var z = name.lastIndexOf('\\');
+			var filename = name.substring(z + 1);
+	
+			if (null == name || name === "." || name === "..") {
+		//	  return null;
+			}
 
-    return {
-      name: name,
-      type: type,
-      time: date,
-      size: size
-    };
+		
+			type = exports.nodeTypes.FILE_TYPE;
+	//		console.log("xxxxxxxxxxxxxxxxxx: " + filename);
+
+			return {
+			  name: filename,
+			  type: type,
+			 // time: date,
+			  size: size,
+			  folder: folder
+			};
+	
+
+			
+	}
+	else {
+		
+			var group = entry.match(RE_DOSEntry_DIR);
+			var type;
+			var size;
+			var name;
+
+			if (!group) {
+			  return null;
+			}
+
+			var replacer = function replacer(str, hour, min, ampm, offset, s) {
+			  return hour + ":" + min + " " + ampm;
+			};
+
+			var time = group[2].replace(/(\d{2}):(\d{2})([AP]M)/, replacer);
+			var date = new Date(group[1] + " " + time).getTime();
+			var dirString = group[3];
+			name = group[6];
+	
+		
+		
+
+			if (null == name || name === "." || name === "..") {
+			  return null;
+			}
+
+			if (dirString === "<DIR>") {
+			  type = exports.nodeTypes.DIRECTORY_TYPE;
+			  size = 0;
+			}
+			else {
+			  size = group[5];
+			  type = exports.nodeTypes.FILE_TYPE;
+			}
+
+			return {
+			  name: name,
+			  type: type,
+			  time: date,
+			  size: size
+			};
+	}
+	
+	
+   
   }
 };
 

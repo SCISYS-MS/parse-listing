@@ -47,6 +47,19 @@ var RE_UnixEntry = new RegExp(
     + "(.*)"
 );
 
+
+var RE_UnixEntry_FTP = new RegExp(
+	"([bcdlfmpSs-])"
++	"(((r|-)(w|-)([xsStTL-]))((r|-)(w|-)([xsStTL-]))((r|-)(w|-)([xsStTL-])))\\+?\\s+"
++	"(\\d+|.)\\s+"
++	"(\\S+|.)\\s+"
++	"(?:(\\S+|.)\\s+)?"
++	"(\\d+|.)\\s+"
++	"((?:\d+[-/]\\d+[-/]\\d+)|(?:\\S+\\s+\\S+))\\s+"
++	"(\\d+(?::\\d+)\\d+(?::\\d+)?)\\s*"
++ 	"(.*)"
+);
+
 // MSDOS format
 // 04-27-00  09:09PM       <DIR>          licensed
 // 07-18-00  10:16AM       <DIR>          pub
@@ -107,6 +120,12 @@ function splitEntries(entries) {
   return entries;
 }
 
+
+function isValidDate(date) {
+  return date && Object.prototype.toString.call(date) === "[object Date]" && !isNaN(date);
+}
+
+
 var RE_RES = /^(\d\d\d)\s(.*)/;
 var RE_MULTI = /^(\d\d\d)-/;
 var RE_SERVER_RESPONSE = /^(\d\d\d)(.*)/;
@@ -117,7 +136,7 @@ exports.parseFtpEntries = function parseFtpEntries(listing, callback) {
   var parsed = [];
   var entries = splitEntries(listing);
   entries.forEach(function(entry, i) {
-	  console.log("ENTRYYYY:" + entry)
+
     // Some servers include an official code-multiline sign at the beginning
     // of every string. We must strip it if that's the case.
     if (RE_MULTI.test(entry)) {
@@ -198,8 +217,9 @@ entry = entry.trim();
 
 var parsers = {
   unix: function(entry) {
+	
     var target, writePerm, readPerm, execPerm;
-    var group = entry.match(RE_UnixEntry);
+    var group = entry.match(RE_UnixEntry_FTP);
 
     if (group) {
       var type = group[1];
@@ -208,6 +228,8 @@ var parsers = {
       var grp = group[17];
       var size = group[18];
       var name = group[21];
+	  
+
 
       var date;
       // Check whether we are given the time (recent file) or the year
@@ -280,13 +302,12 @@ var parsers = {
 
         g += 4;
       });
-
+	
       return file;
     }
   },
-
   msdos: function(entry) {
-		 console.log("COMMAND TYPE:" + commandType );
+
 
 	 if (commandType=="WHERE") {
 	
@@ -322,8 +343,7 @@ var parsers = {
 
 		
 			type = exports.nodeTypes.FILE_TYPE;
-	//		console.log("xxxxxxxxxxxxxxxxxx: " + filename);
-
+	
 			return {
 			  name: filename,
 			  type: type,
@@ -346,15 +366,42 @@ var parsers = {
 			  return null;
 			}
 
-			var replacer = function replacer(str, hour, min, ampm, offset, s) {
+			var replacerTime = function replacerTime(str, hour, min, ampm, offset, s) {
 			  return hour + ":" + min + " " + ampm;
 			};
+			var replacerDate = function replacerDate(str, day, month, year) {
+				
+			if (year.length==2){
+		
+				if(year > 50)   // this number controls how far back to go in the 20th century
+                    year = '19' + year;
+                else
+                    year = '20' + year;
+				
+			}
+			  return year + "-" + month + "-" + day;
+			};
 
-			var time = group[2].replace(/(\d{2}):(\d{2})([AP]M)/, replacer);
-			var date = new Date(group[1] + " " + time).getTime();
+			var time = group[2].replace(/(\d{2}):(\d{2})([AP]M)/, replacerTime);
+			var fDate;
+			if (group[1].indexOf(".")>0){
+			 fDate = group[1].replace(/(\d{2}).(\d{2}).(\d{2}(?:\d{2})?)/, replacerDate);
+			}
+			else{
+				fDate = group[1];
+			}
+			var date = new Date(fDate + " " + time).getTime();
+				
+			if (!(date > 1)) {
+			
+			   return null;
+			}
+			
+			
+			
 			var dirString = group[3];
 			name = group[6];
-	
+			
 		
 		
 
